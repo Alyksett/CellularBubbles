@@ -1,0 +1,101 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Main
+#pragma kernel Update
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> AgentMap;
+RWTexture2D<float4> WorldMap;
+
+struct Agent{
+    float2 position;
+    float4 color; 
+    float speed;
+    float angle;
+};
+
+RWStructuredBuffer<Agent> Agents;
+
+
+float DTime;
+int clock;
+int NumAgents;
+int WIDTH;
+int HEIGHT;
+int speed;
+int brightness;
+
+float myRound(float angle){
+    float val = round(angle/0.785398f) * 0.785398f;
+    return val;
+}
+
+float scaleToRange01(uint state)
+{
+    return state / 4294967295.0;
+}
+float hash(uint state)
+{
+    state ^= 2747636419u;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    return scaleToRange01(state);
+}
+
+float getNearestAgentWeight(float2 position){
+    float nearest = 1000000.0;
+    for(int i = 0; i < NumAgents; i++){
+        Agent agent = Agents[i];
+        float dist = distance(agent.position.xy, position.xy);
+        if(dist<nearest){
+            nearest = dist;
+        }
+    }
+    return nearest/brightness;
+}
+
+
+[numthreads(16,16,1)]
+void Main (uint3 id : SV_DispatchThreadID)
+{
+    float4 color = float4(1,1,1,1);
+    Agent agent = Agents[id.x];
+    float c = 1 - getNearestAgentWeight(id.xy);
+    WorldMap[id.xy] = float4(0  , c, c- 0.4, 1);
+}
+
+
+[numthreads(16,16,1)]
+void Update (uint3 id : SV_DispatchThreadID)
+{
+    if(id.x > NumAgents){return;}
+
+    Agent agent = Agents[id.x];
+    agent.angle += 6.2831;
+    agent.angle = agent.angle % 6.2831;
+    
+    float r1 = hash(id.y * agent.angle);
+    if (r1 >= 0.5){
+        
+        agent.angle += 0.01;
+    }
+    else{
+        agent.angle -= 0.01;
+    }
+
+    if(agent.position.x < 1 || agent.position.x > WIDTH - 1 || agent.position.y < 1 || agent.position.y > HEIGHT -1){
+        agent.angle += 3.1415926535;
+    }
+    
+    float2 velocity = float2(cos(agent.angle), sin(agent.angle));
+    
+    agent.position += velocity * speed * DTime;
+    Agents[id.x] = agent;
+
+    AgentMap[int2(agent.position.x, agent.position.y)] = agent.color;
+}
+
+
